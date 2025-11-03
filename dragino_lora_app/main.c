@@ -429,10 +429,16 @@ void txlora(byte *frame, byte datalen) {
     printf("send: %s\n", frame);
 }
 
+void help() {
+  printf("Usage app -f [freq] -b [bw] -s [sf] -r -t [transmit msg]\n");
+  printf("\t -p [power] -h\n");
+  exit(1);
+}
+
 int main (int argc, char *argv[]) {
   int opt;
   int len;
-  int power = 23;
+  int power;
 
   if (argc < 2) {
     printf ("Usage: argv[0] sender|rec [message]\n");
@@ -442,6 +448,7 @@ int main (int argc, char *argv[]) {
   freq = 915000000;
   // bw ??
   sf = SF7;
+  power = 23;
   
   while((opt = getopt(argc, argv, "f:b:s:rt:p:h")) != -1) {
     switch(opt) {
@@ -463,6 +470,9 @@ int main (int argc, char *argv[]) {
     case 'p':
       power = atoi(optarg);
       if (power > 23) power = 23;
+      break;
+    case 'h':
+      help();
       break;
     }
   }
