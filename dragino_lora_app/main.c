@@ -466,6 +466,8 @@ int main (int argc, char *argv[]) {
       transmit = true;
       len = strlen(optarg);
       if (len > 128) len = 128;
+      memset(hello,0,sizeof(hello));
+      printf("tx: %s\n",optarg);
       strncpy((char *)hello,optarg,len);
       break;
     case 'p':
