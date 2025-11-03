@@ -430,8 +430,9 @@ void txlora(byte *frame, byte datalen) {
 }
 
 void help() {
-  printf("Usage app -f [freq] -b [bw] -s [sf] -r -t [transmit msg]\n");
-  printf("\t -p [power] -h\n");
+  printf("Usage app -f [freq] -b [bw] -s [sf] \\\n" \
+	 "\t-r {rx mode} -t [transmit msg] -p [power] \\" \
+         "\t-h {help msg}\n");
   exit(1);
 }
 
