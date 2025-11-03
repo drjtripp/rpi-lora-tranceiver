@@ -8,13 +8,15 @@
 
 #include <string>
 #include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <string.h>
 #include <sys/time.h>
 #include <signal.h>
-#include <stdlib.h>
 
 #include <sys/ioctl.h>
 
@@ -151,6 +153,7 @@ static const int CHANNEL = 0;
 char message[256];
 
 bool sx1272 = true;
+bool transmit = false;
 
 byte receivedbytes;
 
@@ -173,7 +176,7 @@ sf_t sf = SF7;
 // Set center frequency
 uint32_t  freq = 868100000; // in Mhz! (868.1)
 
-byte hello[32] = "HELLO";
+byte hello[128] = "HELLO";
 
 void die(const char *s)
 {
@@ -292,8 +295,9 @@ void SetupLoRa()
     } else {
         writeReg(REG_SYMB_TIMEOUT_LSB,0x08);
     }
-    writeReg(REG_MAX_PAYLOAD_LENGTH,0x80);
-    writeReg(REG_PAYLOAD_LENGTH,PAYLOAD_LENGTH);
+    // ??
+    writeReg(REG_MAX_PAYLOAD_LENGTH,0x80); // 128
+    writeReg(REG_PAYLOAD_LENGTH,PAYLOAD_LENGTH); //64?
     writeReg(REG_HOP_PERIOD,0xFF);
     writeReg(REG_FIFO_ADDR_PTR, readReg(REG_FIFO_RX_BASE_AD));
 
@@ -392,15 +396,15 @@ static void configPower (int8_t pw) {
 }
 
 
-static void writeBuf(byte addr, byte *value, byte len) {                                                       
-    unsigned char spibuf[256];                                                                          
-    spibuf[0] = addr | 0x80;                                                                            
-    for (int i = 0; i < len; i++) {                                                                         
-        spibuf[i + 1] = value[i];                                                                       
-    }                                                                                                   
-    selectreceiver();                                                                                   
-    wiringPiSPIDataRW(CHANNEL, spibuf, len + 1);                                                        
-    unselectreceiver();                                                                                 
+static void writeBuf(byte addr, byte *value, byte len) {
+  unsigned char spibuf[256];
+  spibuf[0] = addr | 0x80;
+  for (int i = 0; i < len; i++) {
+    spibuf[i + 1] = value[i];
+  }
+  selectreceiver();
+  wiringPiSPIDataRW(CHANNEL, spibuf, len + 1);
+  unselectreceiver();
 }
 
 void txlora(byte *frame, byte datalen) {
@@ -426,54 +430,85 @@ void txlora(byte *frame, byte datalen) {
 }
 
 int main (int argc, char *argv[]) {
+  int opt;
+  int len;
+  int power = 23;
 
-    if (argc < 2) {
-        printf ("Usage: argv[0] sender|rec [message]\n");
-        exit(1);
+  if (argc < 2) {
+    printf ("Usage: argv[0] sender|rec [message]\n");
+    exit(1);
+  }
+
+  freq = 915000000;
+  // bw ??
+  sf = SF7;
+  
+  while((opt = getopt(argc, argv, "f:b:s:rt:p:h")) != -1) {
+    switch(opt) {
+    case 'f':
+      freq = atoi(optarg);
+      break;
+      // bandwidth?
+    case 's':
+      sf = (sf_t) atoi(optarg);
+      break;
+    case 'r':
+      break;
+    case 't':
+      transmit = true;
+      len = strlen(optarg);
+      if (len > 128) len = 128;
+      strncpy((char *)hello,optarg,len);
+      break;
+    case 'p':
+      power = atoi(optarg);
+      if (power > 23) power = 23;
+      break;
     }
+  }
+      
+  wiringPiSetup () ;
+  pinMode(ssPin, OUTPUT);
+  pinMode(dio0, INPUT);
+  pinMode(RST, OUTPUT);
 
-    wiringPiSetup () ;
-    pinMode(ssPin, OUTPUT);
-    pinMode(dio0, INPUT);
-    pinMode(RST, OUTPUT);
+  wiringPiSPISetup(CHANNEL, 500000);
 
-    wiringPiSPISetup(CHANNEL, 500000);
+  SetupLoRa();
 
-    SetupLoRa();
+  if (transmit) {
+    opmodeLora();
+    // enter standby mode (required for FIFO loading))
+    opmode(OPMODE_STANDBY);
 
-    if (!strcmp("sender", argv[1])) {
-        opmodeLora();
-        // enter standby mode (required for FIFO loading))
-        opmode(OPMODE_STANDBY);
+    writeReg(RegPaRamp, (readReg(RegPaRamp) & 0xF0) | 0x08); // set PA ramp-up time 50 uSec
 
-        writeReg(RegPaRamp, (readReg(RegPaRamp) & 0xF0) | 0x08); // set PA ramp-up time 50 uSec
+    configPower(power);
 
-        configPower(23);
+    printf("Send packets at SF%i on %.6lf Mhz.\n", sf,(double)freq/1000000);
+    printf("------------------\n");
 
-        printf("Send packets at SF%i on %.6lf Mhz.\n", sf,(double)freq/1000000);
-        printf("------------------\n");
+    if (argc > 2)
+      strncpy((char *)hello, argv[2], sizeof(hello));
 
-        if (argc > 2)
-            strncpy((char *)hello, argv[2], sizeof(hello));
-
-        while(1) {
-            txlora(hello, strlen((char *)hello));
-            delay(5000);
-        }
-    } else {
-
-        // radio init
-        opmodeLora();
-        opmode(OPMODE_STANDBY);
-        opmode(OPMODE_RX);
-        printf("Listening at SF%i on %.6lf Mhz.\n", sf,(double)freq/1000000);
-        printf("------------------\n");
-        while(1) {
-            receivepacket(); 
-            delay(1);
-        }
-
+    while(1) {
+      txlora(hello, strlen((char *)hello));
+      delay(5000);
     }
+  } else {
 
-    return (0);
+    // radio init
+    opmodeLora();
+    opmode(OPMODE_STANDBY);
+    opmode(OPMODE_RX);
+    printf("Listening at SF%i on %.6lf Mhz.\n", sf,(double)freq/1000000);
+    printf("------------------\n");
+    while(1) {
+      receivepacket(); 
+      delay(1);
+    }
+    
+  }
+  
+  return (0);
 }
